@@ -18,6 +18,35 @@ let fromString<'a> (s:string) =
 // modulus helper
 let inline (%!) a b = (a % b + b) % b
 
+type Symbol = char * int
+
+type Expression = Symbol list
+
+let CharToDigit = Globalization.CharUnicodeInfo.GetDigitValue
+
+let rec ParseSymbols (chars: char[]) : Expression option =
+     let nonSpaceChars = chars |> Array.filter (fun elem -> elem <> ' ')
+     match Array.toList nonSpaceChars with
+     | [] -> Some []
+     | x::xs when not (Char.IsLetter x) -> None
+     | [x] -> Some [x,1]
+     | [x;y] when Char.IsLetter y -> Some [x,1;y,1]
+     | x::y::z::zs when y = '^' && Char.IsDigit z ->
+         zs
+         |> List.toArray
+         |> ParseSymbols
+         |> Option.defaultValue []
+         |> List.append [x, CharToDigit z]
+         |> Some
+     | x::y::z::zs ->
+         y::z::zs
+         |> List.toArray
+         |> ParseSymbols
+         |> Option.defaultValue []
+         |> List.append [x,1]
+         |> Some
+     | _ -> None
+
 type Cmd =
     | Calculate of string
     | Subgroups
@@ -26,6 +55,35 @@ type Cmd =
     with
     override this.ToString() = toString this
     static member fromString s = fromString<Cmd> s
+    
+let Evaluate (expr:Expression option) =
+    let valCounts = Map<char, int>[]
+    expr
+    |> Option.map (fun e ->
+        e
+        |> List.fold (fun (valCounts:Map<char,int>) (x:Symbol) ->
+            if valCounts.ContainsKey (fst x)
+            then valCounts.Change(fst x, Option.map (fun x -> x + 1))
+            else valCounts.Add(fst x, snd x)
+            )
+            Map.empty
+        |> Map.fold (fun (outExpr:Expression) (key:char) (num:int) -> outExpr @ [key, num]) []
+        )
+
+let PrintExpression (expr: Expression option) =
+    expr
+    |> Option.map (fun e ->
+        e
+        |> List.iter (fun x -> Console.Write $"{fst x}^{snd x}")
+        )
+    |> ignore
+    Console.WriteLine ""
+    
+let DisplayExpression (s:string) =
+    s.ToCharArray()
+    |> ParseSymbols
+    |> Evaluate
+    |> PrintExpression
     
 let CalculateLetterAsModuloN (n:int) (input:string) =
     let mutable throwaway = 0
@@ -60,7 +118,9 @@ let rec CalculationLoop n =
     | Some Subgroups -> Console.WriteLine "Subgroups found."
     | Some (Calculate s) ->
         Console.WriteLine $"Calculating {s}..."
-        CalculateLetterAsModuloN n s
+        let b = ParseSymbols (s.ToCharArray())
+        DisplayExpression s
+        //CalculateLetterAsModuloN n s
     | Some List ->
         Console.WriteLine "*****\nCommands:"
         Array.iter (fun (x:UnionCaseInfo) -> Console.WriteLine x.Name) (FSharpType.GetUnionCases typeof<Cmd>)
